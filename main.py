@@ -10,6 +10,11 @@ from constants import (
 
 from panda3d.core import (
     AmbientLight,
+    CollisionHandlerPusher,
+    CollisionNode,
+    CollisionSphere,
+    CollisionTraverser,
+    CollisionTube,
     DirectionalLight,
     Vec3,
     Vec4, 
@@ -101,6 +106,48 @@ class Game(ShowBase):
         # use the task manager to run an update loop
         self.updateTask = self.taskMgr.add(self.update, "update")
 
+        # default variable for a traverser, a checker of physics objects for collisions
+        self.cTrav = CollisionTraverser()
+        # a pusher (prevents solid objects from intersecting other solids), can also send collision events
+        self.pusher = CollisionHandlerPusher()
+        colliderNode = CollisionNode("player")
+        colliderNode.addSolid(CollisionSphere(0, 0, 0, 0.3))
+        collider = self.tempActor.attachNewNode(colliderNode)
+        # uncomment to show the collider of the player
+        # collider.show()
+        # effectively tells the traverser and pusher should collide with other objects
+        self.pusher.addCollider(collider, self.tempActor)
+        self.cTrav.addCollider(collider, self.pusher)
+
+        # Limits the scene to two-dimensional, by allowing responses of the pusher
+        # to be restricted to only the horizontal
+        self.pusher.setHorizontal(True)
+
+        # this section should be able to be easily refactored
+        wallSolid = CollisionTube(-8.0, 0, 0, 8.0, 0, 0, 0.2)
+        wallNode = CollisionNode("wall")
+        wallNode.addSolid(wallSolid)
+        wall = self.render.attachNewNode(wallNode)
+        wall.setY(8.0)
+
+        wallSolid = CollisionTube(-8.0, 0, 0, 8.0, 0, 0, 0.2)
+        wallNode = CollisionNode("wall")
+        wallNode.addSolid(wallSolid)
+        wall = self.render.attachNewNode(wallNode)
+        wall.setY(-8.0)
+
+        wallSolid = CollisionTube(0, -8.0, 0, 0, 8.0, 0, 0.2)
+        wallNode = CollisionNode("wall")
+        wallNode.addSolid(wallSolid)
+        wall = self.render.attachNewNode(wallNode)
+        wall.setX(8.0)
+
+        wallSolid = CollisionTube(0, -8.0, 0, 0, 8.0, 0, 0.2)
+        wallNode = CollisionNode("wall")
+        wallNode.addSolid(wallSolid)
+        wall = self.render.attachNewNode(wallNode)
+        wall.setX(-8.0)
+
     
     # the method of which we are calling when we accept input
     def updateKeyMap(self, controlName, controlState):
@@ -128,5 +175,8 @@ class Game(ShowBase):
         return task.cont
 
 
-game = Game()
-game.run()
+
+if __name__ == "__main__":
+    game = Game()
+    game.run()
+
