@@ -1,13 +1,4 @@
 # import farm
-from constants import (
-    KEYBINDS, 
-    ACTION_UP, 
-    ACTION_DOWN, 
-    ACTION_LEFT, 
-    ACTION_RIGHT, 
-    ACTION_SHOOT
-)
-
 from panda3d.core import (
     AmbientLight,
     CollisionHandlerPusher,
@@ -22,6 +13,8 @@ from panda3d.core import (
     loadPrcFileData
 )
 
+from GameObject import *
+
 # so Panda3D can look beyond root directory into Assets to find ../texture/
 loadPrcFileData("", "model-path Assets")
 
@@ -34,7 +27,6 @@ class Game(ShowBase):
     def __init__(self):
         ShowBase.__init__(self)
 
-        # initialize window and edit size
         properties = WindowProperties()
         properties.setSize(1280, 720)
         self.win.requestProperties(properties)
@@ -49,19 +41,6 @@ class Game(ShowBase):
         # wont show until you paraent it to somethin that is already in the scene graph
         # in this case attach to root which is known as render
         self.environment.reparentTo(self.render)
-
-        # actors are animated models
-        # you pass into the constructor the file for the model itself
-        # then you pass in a dict {animation names, animation files} 
-        self.tempActor = Actor("Assets/PandaChan/act_p3d_chan", {"walk" : "Assets/PandaChan/a_p3d_chan_run"})
-        self.tempActor.reparentTo(self.render)
-
-        # models usually arent single nodes and tend to have a child node containing
-        # the models themselves. Choose to rotate model themselves instead of NodePath
-        # to avoid any potential future complications with rotations
-        self.tempActor.getChild(0).setH(180)
-        # as opposed to "play" which runs through it once
-        self.tempActor.loop("walk")
 
         # to get a topdown feel
         self.camera.setPos(0 ,0 ,32)
@@ -86,8 +65,6 @@ class Game(ShowBase):
         # Panda3D provides a built-in shader-generator
         self.render.setShaderAuto()
 
-        # input dict (better than an enum since native string acceptance and avoid .value)
-        # using this recommendation from tutorial for more sophistication
         self.keyMap = {
             ACTION_UP : False,
             ACTION_DOWN : False,
@@ -103,25 +80,25 @@ class Game(ShowBase):
             # process is same for interest in release, add -up
             self.accept(f"{key}-up", self.updateKeyMap, [action, False])
 
-        # use the task manager to run an update loop
         self.updateTask = self.taskMgr.add(self.update, "update")
 
         # default variable for a traverser, a checker of physics objects for collisions
         self.cTrav = CollisionTraverser()
         # a pusher (prevents solid objects from intersecting other solids), can also send collision events
         self.pusher = CollisionHandlerPusher()
-        colliderNode = CollisionNode("player")
-        colliderNode.addSolid(CollisionSphere(0, 0, 0, 0.3))
-        collider = self.tempActor.attachNewNode(colliderNode)
-        # uncomment to show the collider of the player
-        # collider.show()
-        # effectively tells the traverser and pusher should collide with other objects
-        self.pusher.addCollider(collider, self.tempActor)
-        self.cTrav.addCollider(collider, self.pusher)
 
         # Limits the scene to two-dimensional, by allowing responses of the pusher
         # to be restricted to only the horizontal
         self.pusher.setHorizontal(True)
+
+        # when an object enters a collision, emit an event of the pattern:
+        # <from_obj>-into-<into_obj> ex "player-into-wall" (names are from GameObject.py and here)
+        self.pusher.add_in_pattern("%fn-into-%in")
+
+        self.accept("trapEnemy-into-wall", self.stopTrap)
+        self.accept("trapEnemy-into-trapEnemy", self.stopTrap)
+        self.accept("trapEnemy-into-player", self.trapCollision)
+        self.accept("trapEnemy-into-walkingEnemy", self.trapCollision)
 
         # this section should be able to be easily refactored
         wallSolid = CollisionTube(-8.0, 0, 0, 8.0, 0, 0, 0.2)
@@ -148,6 +125,12 @@ class Game(ShowBase):
         wall = self.render.attachNewNode(wallNode)
         wall.setX(-8.0)
 
+        # Game Objects
+        self.player = Player()
+        self.tempEnemy = WalkingEnemy(Vec3(5, 0, 0))
+        self.tempTrap = TrapEnemy(Vec3(-2, 7, 0))
+
+
     
     # the method of which we are calling when we accept input
     def updateKeyMap(self, controlName, controlState):
@@ -159,20 +142,40 @@ class Game(ShowBase):
         # from my understading, deltatime equivalent
         dt = globalClock.getDt()
 
-        # interesting method of doing movement, if some key is pressed,
-        # use dt to calculate distance, then apply
-        if self.keyMap[ACTION_UP]:
-            self.tempActor.setPos(self.tempActor.getPos() + Vec3(0, 5.0*dt, 0))
-        if self.keyMap[ACTION_DOWN]:
-            self.tempActor.setPos(self.tempActor.getPos() + Vec3(0, -5.0*dt, 0))
-        if self.keyMap[ACTION_LEFT]:
-            self.tempActor.setPos(self.tempActor.getPos() + Vec3(-5.0*dt, 0, 0))
-        if self.keyMap[ACTION_RIGHT]:
-            self.tempActor.setPos(self.tempActor.getPos() + Vec3(5.0*dt, 0, 0))
-        if self.keyMap[ACTION_SHOOT]:
-            print("Shot!")
+        self.player.update(self.keyMap, dt)
+
+        self.tempEnemy.update(self.player, dt)
+
+        self.tempTrap.update(self.player, dt)
         
         return task.cont
+    
+
+    def stopTrap(self, entry):
+        collider = entry.getFromNodePath()
+        if collider.hasPythonTag("owner"):
+            trap = collider.getPythonTag("owner")
+            trap.moveDirection = 0
+            trap.ignorePlayer = False
+
+    
+    def trapCollision(self, entry):
+        collider = entry.getFromNodePath()
+        if collider.hasPythonTag("owner"):
+            trap = collider.getPythonTag("owner")
+            
+            if trap.moveDirection == 0: 
+                return
+        
+            collider = entry.getIntoNodePath()
+            if collider.hasPythonTag("owner"):
+                obj = collider.getPythonTag("owner")
+                if isinstance(obj, Player):
+                    if not trap.ignorePlayer:
+                        obj.alterHealth(-1)
+                        trap.ignorePlayer = True
+                else:
+                    obj.alterHealth(-10)
 
 
 
